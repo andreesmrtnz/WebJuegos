@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juego de Disparos Espacial</title>
+    <style>
+        canvas {
+            border: 1px solid white;
+            display: block;
+            margin: 0 auto;
+            background-color: #000;
+        }
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+            color: white;
+            background-color: #111;
+            overflow: hidden;
+        }
+        #menu, #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .icon-button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 40px;
+            margin: 10px;
+            color: white;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 10px cyan;
+            transition: box-shadow 0.3s, color 0.3s;
+        }
+        .icon-button:hover {
+            color: cyan;
+            box-shadow: 0 0 20px cyan;
+        }
+        #progressBar {
+            width: 300px;
+            height: 20px;
+            border: 1px solid white;
+            margin: 10px auto;
+            background: #222;
+        }
+        #progressFill {
+            height: 100%;
+            background: linear-gradient(to right, cyan, blue);
+            width: 0%;
+        }
+        #levelUp {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px;
+            color: cyan;
+            text-shadow: 0 0 10px cyan;
+            opacity: 0;
+            transition: opacity 1s;
+        }
+        #boosts {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 16px;
+            text-align: left;
+        }
+        .boost-item {
+            margin: 5px 0;
+        }
+        .boost-item span {
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Juego de Disparos Espacial</h1>
+    <p>Puntuación: <span id="score">0</span> | Máxima Puntuación: <span id="highScore">0</span> | Nivel: <span id="level">1</span></p>
+    <div id="progressBar"><div id="progressFill"></div></div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="menu">
+        <h2>¡Aventura Espacial!</h2>
+        <button class="icon-button" id="playButton" title="Jugar">🚀</button>
+    </div>
+    <div id="gameOver" style="display: none;">
+        <h2>¡Game Over!</h2>
+        <p>Puntuación: <span id="finalScore">0</span></p>
+        <button class="icon-button" id="retryButton" title="Reintentar">🔄</button>
+        <button class="icon-button" id="homeButton" title="Volver al Menú">🏠</button>
+    </div>
+    <div id="levelUp" style="display: none;">¡Nivel Superado!</div>
+    <div id="boosts"></div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score');
+        const highScoreDisplay = document.getElementById('highScore');
+        const levelDisplay = document.getElementById('level');
+        const progressFill = document.getElementById('progressFill');
+        const menu = document.getElementById('menu');
+        const gameOverScreen = document.getElementById('gameOver');
+        const finalScoreDisplay = document.getElementById('finalScore');
+        const levelUpText = document.getElementById('levelUp');
+        const boostsDisplay = document.getElementById('boosts');
+
+        // Estrellas de fondo
+        const stars = [];
+        for (let i = 0; i < 100; i++) {
+            stars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                radius: Math.random() * 1.5,
+                speed: Math.random() * 0.5 + 0.2
+            });
+        }
+
+        // Objeto del jugador
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height - 50,
+            width: 40,
+            height: 40,
+            baseSpeed: 5,
+            speed: 5,
+            dx: 0,
+            shootCooldown: 0,
+            baseFireRate: 20,
+            fireRate: 20,
+            shield: false,
+            boosts: {
+                speed: { active: false, timeLeft: 0 },
+                fireRate: { active: false, timeLeft: 0 },
+                shield: { active: false, timeLeft: 0 }
+            }
+        };
+
+        // Disparos
+        const bullets = [];
+        const bulletSpeed = 7;
+        const bulletWidth = 5;
+        const bulletHeight = 10;
+
+        // Enemigos
+        const enemies = [];
+        const enemyWidth = 30;
+        const enemyHeight = 30;
+        let enemySpeed = 1;
+        let spawnRate = 120;
+        let frameCount = 0;
+
+        // Mejoras
+        const powerUps = [];
+        const powerUpWidth = 20;
+        const powerUpHeight = 20;
+        const powerUpSpeed = 2;
+        const powerUpTypes = ['speed', 'fireRate', 'shield'];
+
+        // Estado del juego
+        let score = 0;
+        let highScore = localStorage.getItem('highScore') ? parseInt(localStorage.getItem('highScore')) : 0;
+        let level = 1;
+        let enemiesToKill = 10;
+        let enemiesKilled = 0;
+        let gameStarted = false;
+        let levelUpAnimation = false;
+        let levelUpFrame = 0;
+
+        // Controles
+        let leftPressed = false;
+        let rightPressed = false;
+        let spacePressed = false;
+
+        // Event listeners para teclas
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'ArrowLeft') leftPressed = true;
+            if (e.code === 'ArrowRight') rightPressed = true;
+            if (e.code === 'Space') spacePressed = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft') leftPressed = false;
+            if (e.code === 'ArrowRight') rightPressed = false;
+            if (e.code === 'Space') spacePressed = false;
+        });
+
+        // Iniciar juego
+        document.getElementById('playButton').addEventListener('click', () => {
+            menu.style.display = 'none';
+            gameStarted = true;
+            gameLoop();
+        });
+
+        // Reintentar
+        document.getElementById('retryButton').addEventListener('click', () => {
+            document.location.reload();
+        });
+
+        // Volver al menú
+        document.getElementById('homeButton').addEventListener('click', () => {
+            gameOverScreen.style.display = 'none';
+            menu.style.display = 'block';
+            document.location.reload();
+        });
+
+        // Dibujar estrellas
+        function drawStars() {
+            ctx.fillStyle = 'white';
+            stars.forEach(star => {
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        // Mover estrellas
+        function moveStars() {
+            stars.forEach(star => {
+                star.y += star.speed;
+                if (star.y > canvas.height) {
+                    star.y = 0;
+                    star.x = Math.random() * canvas.width;
+                }
+            });
+        }
+
+        // Dibujar al jugador
+        function drawPlayer() {
+            ctx.fillStyle = player.shield ? 'blue' : 'cyan';
+            ctx.beginPath();
+            ctx.moveTo(player.x, player.y - player.height / 2);
+            ctx.lineTo(player.x - player.width / 2, player.y + player.height / 2);
+            ctx.lineTo(player.x + player.width / 2, player.y + player.height / 2);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // Dibujar disparos
+        function drawBullets() {
+            ctx.fillStyle = 'yellow';
+            bullets.forEach(bullet => {
+                ctx.fillRect(bullet.x, bullet.y, bulletWidth, bulletHeight);
+            });
+        }
+
+        // Dibujar enemigos
+        function drawEnemies() {
+            ctx.fillStyle = 'red';
+            enemies.forEach(enemy => {
+                ctx.fillRect(enemy.x, enemy.y, enemyWidth, enemyHeight);
+            });
+        }
+
+        // Dibujar mejoras
+        function drawPowerUps() {
+            powerUps.forEach(powerUp => {
+                ctx.fillStyle = powerUp.type === 'speed' ? 'green' : powerUp.type === 'fireRate' ? 'orange' : 'purple';
+                ctx.fillRect(powerUp.x, powerUp.y, powerUpWidth, powerUpHeight);
+            });
+        }
+
+        // Mostrar resumen de mejoras
+        function updateBoostsDisplay() {
+            let html = '';
+            const boostIcons = {
+                speed: '🚀',
+                fireRate: '🔫',
+                shield: '🛡️'
+            };
+            for (const [type, boost] of Object.entries(player.boosts)) {
+                if (boost.active) {
+                    const timeLeft = (boost.timeLeft / 60).toFixed(1); // Convertir frames a segundos
+                    html += `<div class="boost-item"><span>${boostIcons[type]}</span>${type.charAt(0).toUpperCase() + type.slice(1)}: ${timeLeft}s</div>`;
+                }
+            }
+            boostsDisplay.innerHTML = html;
+        }
+
+        // Mover al jugador
+        function movePlayer() {
+            player.dx = 0;
+            if (leftPressed && player.x - player.width / 2 > 0) {
+                player.dx = -player.speed;
+            }
+            if (rightPressed && player.x + player.width / 2 < canvas.width) {
+                player.dx = player.speed;
+            }
+            player.x += player.dx;
+        }
+
+        // Mover disparos
+        function moveBullets() {
+            bullets.forEach((bullet, index) => {
+                bullet.y -= bulletSpeed;
+                if (bullet.y < 0) {
+                    bullets.splice(index, 1);
+                }
+            });
+        }
+
+        // Mover enemigos
+        function moveEnemies() {
+            enemies.forEach((enemy, index) => {
+                enemy.y += enemySpeed;
+                if (enemy.y > canvas.height) {
+                    enemies.splice(index, 1);
+                    endGame();
+                }
+            });
+        }
+
+        // Mover mejoras
+        function movePowerUps() {
+            powerUps.forEach((powerUp, index) => {
+                powerUp.y += powerUpSpeed;
+                if (powerUp.y > canvas.height) {
+                    powerUps.splice(index, 1);
+                }
+            });
+        }
+
+        // Crear disparo con cadencia
+        function shoot() {
+            if (spacePressed && player.shootCooldown <= 0) {
+                bullets.push({
+                    x: player.x - bulletWidth / 2,
+                    y: player.y - player.height / 2
+                });
+                player.shootCooldown = player.fireRate;
+            }
+            if (player.shootCooldown > 0) {
+                player.shootCooldown--;
+            }
+        }
+
+        // Crear enemigo
+        function spawnEnemy() {
+            frameCount++;
+            if (frameCount % spawnRate === 0) {
+                enemies.push({
+                    x: Math.random() * (canvas.width - enemyWidth),
+                    y: 0
+                });
+            }
+        }
+
+        // Crear mejora
+        function spawnPowerUp() {
+            if (frameCount % 300 === 0 && Math.random() < 0.3) {
+                powerUps.push({
+                    x: Math.random() * (canvas.width - powerUpWidth),
+                    y: 0,
+                    type: powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)]
+                });
+            }
+        }
+
+        // Detectar colisiones
+        function detectCollisions() {
+            bullets.forEach((bullet, bIndex) => {
+                enemies.forEach((enemy, eIndex) => {
+                    if (
+                        bullet.x < enemy.x + enemyWidth &&
+                        bullet.x + bulletWidth > enemy.x &&
+                        bullet.y < enemy.y + enemyHeight &&
+                        bullet.y + bulletHeight > enemy.y
+                    ) {
+                        bullets.splice(bIndex, 1);
+                        enemies.splice(eIndex, 1);
+                        score += 10;
+                        enemiesKilled++;
+                        scoreDisplay.textContent = score;
+                        updateProgressBar();
+                        checkLevelUp();
+                    }
+                });
+            });
+
+            enemies.forEach((enemy, index) => {
+                if (
+                    player.x - player.width / 2 < enemy.x + enemyWidth &&
+                    player.x + player.width / 2 > enemy.x &&
+                    player.y - player.height / 2 < enemy.y + enemyHeight &&
+                    player.y + player.height / 2 > enemy.y
+                ) {
+                    if (!player.shield) {
+                        endGame();
+                    } else {
+                        enemies.splice(index, 1);
+                        player.shield = false;
+                        player.boosts.shield.active = false;
+                    }
+                }
+            });
+
+            powerUps.forEach((powerUp, index) => {
+                if (
+                    player.x - player.width / 2 < powerUp.x + powerUpWidth &&
+                    player.x + player.width / 2 > powerUp.x &&
+                    player.y - player.height / 2 < powerUp.y + powerUpHeight &&
+                    player.y + player.height / 2 > powerUp.y
+                ) {
+                    applyPowerUp(powerUp.type);
+                    powerUps.splice(index, 1);
+                }
+            });
+        }
+
+        // Aplicar mejoras
+        function applyPowerUp(type) {
+            const duration = 5000; // 5 segundos
+            const durationFrames = duration / (1000 / 60); // Convertir a frames
+            if (type === 'speed') {
+                player.speed = player.baseSpeed * 1.5;
+                player.boosts.speed = { active: true, timeLeft: durationFrames };
+                setTimeout(() => {
+                    player.speed = player.baseSpeed;
+                    player.boosts.speed.active = false;
+                }, duration);
+            } else if (type === 'fireRate') {
+                player.fireRate = player.baseFireRate / 2;
+                player.boosts.fireRate = { active: true, timeLeft: durationFrames };
+                setTimeout(() => {
+                    player.fireRate = player.baseFireRate;
+                    player.boosts.fireRate.active = false;
+                }, duration);
+            } else if (type === 'shield') {
+                player.shield = true;
+                player.boosts.shield = { active: true, timeLeft: durationFrames };
+                setTimeout(() => {
+                    player.shield = false;
+                    player.boosts.shield.active = false;
+                }, duration);
+            }
+        }
+
+        // Actualizar barra de progreso
+        function updateProgressBar() {
+            const progress = (enemiesKilled / enemiesToKill) * 100;
+            progressFill.style.width = `${progress}%`;
+        }
+
+        // Subir de nivel
+        function checkLevelUp() {
+            if (enemiesKilled >= enemiesToKill) {
+                level++;
+                enemiesKilled = 0;
+                enemiesToKill += 5;
+                enemySpeed += 0.5;
+                spawnRate = Math.max(30, spawnRate - 10);
+                levelDisplay.textContent = level;
+                updateProgressBar();
+                startLevelUpAnimation();
+            }
+        }
+
+        // Animación de nivel superado
+        function startLevelUpAnimation() {
+            levelUpAnimation = true;
+            levelUpFrame = 0;
+            levelUpText.style.display = 'block';
+            levelUpText.style.opacity = '1';
+        }
+
+        function updateLevelUpAnimation() {
+            if (levelUpAnimation) {
+                levelUpFrame++;
+                if (levelUpFrame > 60) {
+                    levelUpText.style.opacity = '0';
+                    setTimeout(() => {
+                        levelUpText.style.display = 'none';
+                        levelUpAnimation = false;
+                    }, 1000);
+                }
+            }
+        }
+
+        // Actualizar temporizadores de mejoras
+        function updateBoostTimers() {
+            for (const boost of Object.values(player.boosts)) {
+                if (boost.active) {
+                    boost.timeLeft--;
+                    if (boost.timeLeft <= 0) {
+                        boost.active = false;
+                    }
+                }
+            }
+            updateBoostsDisplay();
+        }
+
+        // Terminar juego
+        function endGame() {
+            gameStarted = false;
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('highScore', highScore);
+                highScoreDisplay.textContent = highScore;
+            }
+            finalScoreDisplay.textContent = score;
+            gameOverScreen.style.display = 'block';
+        }
+
+        // Bucle principal del juego
+        function gameLoop() {
+            if (!gameStarted) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            moveStars();
+            drawStars();
+            movePlayer();
+            shoot();
+            moveBullets();
+            spawnEnemy();
+            moveEnemies();
+            spawnPowerUp();
+            movePowerUps();
+            detectCollisions();
+            updateLevelUpAnimation();
+            updateBoostTimers();
+
+            drawPlayer();
+            drawBullets();
+            drawEnemies();
+            drawPowerUps();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Inicializar máxima puntuación
+        highScoreDisplay.textContent = highScore;
+    </script>
+</body>
+</html>
